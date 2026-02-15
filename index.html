@@ -419,7 +419,14 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+(function() {
+  // Supabase 설정
+  const SUPABASE_URL = 'https://lipnrfkbkscssyabyikw.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxpcG5yZmtia3Njc3N5YWJ5aWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwNzg1NDQsImV4cCI6MjA4NjY1NDU0NH0.2t9G4d1ovH6ZO7giqtt03G5oHWJ4Cx04OVnG8G9E_pg';
+  const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
   const inputEl = document.getElementById('itemInput');
   const listArea = document.getElementById('listArea');
   const countEl = document.getElementById('count');
@@ -443,7 +450,7 @@
     { id: 'other',  label: '기타',      icon: '📦', color: '#b2bec3', bg: '#f0f0f2' },
   ];
 
-  let items = JSON.parse(localStorage.getItem('shopping-list-v2') || '[]');
+  let items = [];
   let selectedCategory = 'other';
   let filterCategory = 'all';
 
@@ -451,33 +458,83 @@
     if (e.key === 'Enter') addItem();
   });
 
-  function save() {
-    localStorage.setItem('shopping-list-v2', JSON.stringify(items));
+  // Supabase에서 데이터 로드
+  async function loadItems() {
+    const { data, error } = await db
+      .from('shopping_items')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.error('데이터 로드 실패:', error);
+      items = JSON.parse(localStorage.getItem('shopping-list-v2') || '[]');
+    } else {
+      items = data.map(row => ({
+        id: row.id,
+        text: row.text,
+        checked: row.checked,
+        category: row.category || 'other'
+      }));
+    }
+    render();
   }
 
   function getCat(id) {
     return CATEGORIES.find(c => c.id === id) || CATEGORIES[CATEGORIES.length - 1];
   }
 
-  function addItem() {
+  async function addItem() {
     const text = inputEl.value.trim();
     if (!text) return;
-    items.push({ text, checked: false, category: selectedCategory });
     inputEl.value = '';
-    save();
+
+    const { data, error } = await db
+      .from('shopping_items')
+      .insert({ text, checked: false, category: selectedCategory })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('추가 실패:', error);
+      return;
+    }
+
+    items.push({ id: data.id, text: data.text, checked: data.checked, category: data.category });
     render();
     inputEl.focus();
   }
 
-  function toggleItem(i) {
-    items[i].checked = !items[i].checked;
-    save();
+  async function toggleItem(i) {
+    const item = items[i];
+    const newChecked = !item.checked;
+
+    const { error } = await db
+      .from('shopping_items')
+      .update({ checked: newChecked })
+      .eq('id', item.id);
+
+    if (error) {
+      console.error('업데이트 실패:', error);
+      return;
+    }
+
+    item.checked = newChecked;
     render();
   }
 
-  function deleteItem(i) {
+  async function deleteItem(i) {
+    const item = items[i];
+
+    const { error } = await db
+      .from('shopping_items')
+      .delete()
+      .eq('id', item.id);
+
+    if (error) {
+      console.error('삭제 실패:', error);
+      return;
+    }
+
     items.splice(i, 1);
-    save();
     render();
   }
 
@@ -588,7 +645,16 @@
     return d.innerHTML;
   }
 
-  render();
+  // 글로벌 함수 노출 (onclick 핸들러용)
+  window.addItem = addItem;
+  window.toggleItem = toggleItem;
+  window.deleteItem = deleteItem;
+  window.selectCategory = selectCategory;
+  window.setFilter = setFilter;
+
+  // 앱 초기화 - Supabase에서 데이터 로드
+  loadItems();
+})();
 </script>
 
 </body>
